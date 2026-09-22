@@ -1,0 +1,23 @@
+# Python virtual environments
+venv/
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Node / React dependencies
+node_modules/
+
+# Vite build output
+dist/
+
+# Environment variables / secrets
+.env
+.env.*
+
+# macOS files
+.DS_Store
+
+# VS Code
+.vscode/
