@@ -1,0 +1,40 @@
+services:
+  # PROMETHEUS
+  # Collects and stores metrics from FastAPI
+  prometheus:
+    image: prom/prometheus:latest
+
+    container_name: weather-prometheus
+
+    ports:
+      - "9090:9090"
+
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+  # GRAFANA
+  # Visualizes the metrics stored by Prometheus
+  grafana:
+    image: grafana/grafana:latest
+
+    container_name: weather-grafana
+
+    ports:
+      - "3000:3000"
+
+    depends_on:
+      - prometheus
+
+    volumes:
+      - grafana-data:/var/lib/grafana
+
+   # NODE EXPORTER -- exposes system level metrics 
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: weather-node-exporter
+
+    ports:
+      - "9100:9100"
+      
+volumes:
+  grafana-data:

@@ -1,4 +1,7 @@
 import httpx
+#Part B
+import time 
+from metrics import WEATHER_API_DURATION
 
 # Converts Open-Meteo weather codes into readable conditions
 def get_weather_condition(code):
@@ -92,6 +95,7 @@ def get_coordinates(city):
 
 
 # Gets the current weather using latitude and longitude
+# Gets the current weather using latitude and longitude
 def get_current_weather(latitude, longitude, timezone):
 
     url = "https://api.open-meteo.com/v1/forecast"
@@ -115,12 +119,23 @@ def get_current_weather(latitude, longitude, timezone):
     }
 
     try:
-        response = httpx.get(
-            url,
-            params=parameters,
-            timeout=5.0
-        )
 
+        # Start timing the external weather API request
+        start_time = time.perf_counter()
+
+        try:
+            response = httpx.get(
+                url,
+                params=parameters,
+                timeout=5.0
+            )
+
+        finally:
+            # Record how long the external API request took
+            duration = time.perf_counter() - start_time
+            WEATHER_API_DURATION.observe(duration)
+
+        # Raises an error if Open-Meteo returned 4xx or 5xx
         response.raise_for_status()
 
         data = response.json()
@@ -152,16 +167,21 @@ def get_current_weather(latitude, longitude, timezone):
             "wind_direction_unit": units["wind_direction_10m"],
 
             "weather_code": current["weather_code"],
+
             "condition": get_weather_condition(
                 current["weather_code"]
             )
         }
 
     except httpx.RequestError:
-        raise Exception("Could not connect to the weather service")
+        raise Exception(
+            "Could not connect to the weather service"
+        )
 
     except httpx.HTTPStatusError:
-        raise Exception("Weather service returned an error")
+        raise Exception(
+            "Weather service returned an error"
+        )
     
 def get_forecast(latitude, longitude, timezone):
 
