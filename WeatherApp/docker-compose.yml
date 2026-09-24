@@ -35,6 +35,57 @@ services:
 
     ports:
       - "9100:9100"
-      
+
+  # ELASTICSEARCH
+  # Stores application logs collected by Filebeat
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+    container_name: weather-elasticsearch
+
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+
+    ports:
+      - "9200:9200"
+
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+
+    
+  # KIBANA
+  # Provides a UI to search and visualize logs stored in Elasticsearch
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.15.3
+    container_name: weather-kibana
+
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+
+    ports:
+      - "5601:5601"
+
+    depends_on:
+      - elasticsearch
+
+  # FILEBEAT
+  # Reads FastAPI JSON logs and sends them to Elasticsearch
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.15.3
+    container_name: weather-filebeat
+
+    user: root
+
+    depends_on:
+      - elasticsearch
+      - kibana
+
+    volumes:
+      - ./filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - ./logs:/var/log/weather-app:ro
+
+    command: ["filebeat", "-e", "--strict.perms=false"]
+
 volumes:
   grafana-data:
+  elasticsearch-data:
