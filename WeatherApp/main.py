@@ -240,3 +240,9 @@ def metrics():
         content=generate_latest(),
         media_type=CONTENT_TYPE_LATEST
     )
+
+# Part C: controlled endpoint to test ERROR logging
+# creates a new FastAPI endpoint: GET /test-error
+@app.get("/test-error")
+def test_error():
+    raise RuntimeError("Simulated server failure for observability testing")
