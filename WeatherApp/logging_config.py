@@ -2,6 +2,7 @@ import json
 import logging
 import os
 from datetime import datetime, timezone
+from logging.handlers import RotatingFileHandler #Part C - log retention
 
 # Directory where application logs will be stored
 LOG_DIRECTORY = "logs"
@@ -46,8 +47,11 @@ logger.propagate = False
 
 # FILE HANDLER
 # Writes JSON logs to logs/weather-app.log
-file_handler = logging.FileHandler(
-    os.path.join(LOG_DIRECTORY, "weather-app.log")
+file_handler = RotatingFileHandler(
+    os.path.join(LOG_DIRECTORY, "weather-app.log"),
+    maxBytes=5 * 1024 * 1024,  # 5 MB
+    backupCount=5,             # Keep 5 old log files
+    encoding="utf-8"
 )
 
 file_handler.setFormatter(JSONFormatter())
