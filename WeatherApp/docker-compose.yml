@@ -29,13 +29,30 @@ services:
       - grafana-data:/var/lib/grafana
 
    # NODE EXPORTER -- exposes system level metrics 
+  # node-exporter:
+  #   image: prom/node-exporter:latest
+  #   container_name: weather-node-exporter
+
+  #   ports:
+  #     - "9100:9100"
+
+  # NODE EXPORTER -- exposes system level metrics 
   node-exporter:
     image: prom/node-exporter:latest
     container_name: weather-node-exporter
-
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
     ports:
       - "9100:9100"
-
+      
   # ELASTICSEARCH
   # Stores application logs collected by Filebeat
   elasticsearch:

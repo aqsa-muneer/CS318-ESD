@@ -12,10 +12,10 @@ scrape_configs:
           - "host.docker.internal:8000"
 
   # SYSTEM METRICS FROM NODE EXPORTER
-  - job_name: "node-exporter"
-
+   - job_name: "node-exporter"
     metrics_path: /metrics
-
     static_configs:
       - targets:
           - "node-exporter:9100"
+        labels:
+          machine: "AM-dev-machine"   # replace with your actual hostname, e.g. output of `hostname`
