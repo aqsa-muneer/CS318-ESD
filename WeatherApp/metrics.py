@@ -44,3 +44,11 @@ WEATHER_SEARCH_RESULTS = Counter(
     "Weather search results",
     ["result"]
 )
+
+# ASSINGMENT 2 CHANGES
+# IDEMPOTENCY -- outcomes of POST /subscriptions idempotency handling
+IDEMPOTENCY_REQUESTS = Counter(
+    "weather_idempotency_requests_total",
+    "Idempotency-Key outcomes for POST /subscriptions",
+    ["result"]
+)
