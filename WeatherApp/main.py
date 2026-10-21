@@ -1,4 +1,5 @@
 # ASSIGNMENT 2 PART A
+import os
 from typing import Annotated
 from fastapi import FastAPI, HTTPException, Request, Depends, Header, Query
 from fastapi.exceptions import RequestValidationError
@@ -22,6 +23,10 @@ from schemas import(ErrorResponse, WeatherResponse, ForecastResponse, HomeRespon
 from ratelimit import rate_limit_weather
 from idempotency import IdempotencyStore, fingerprint
 from subscriptions import SubscriptionRepository
+
+if os.getenv("WEATHER_FAKE_UPSTREAM") == "1":
+    import fake_upstream
+    fake_upstream.install()
 
 app = FastAPI(
     title="Weather App API",

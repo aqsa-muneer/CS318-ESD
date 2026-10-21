@@ -1,0 +1,40 @@
+Weather App API v1.1.0
+
+GET   /  - Home
+        200: Successful Response                                        HomeResponse
+
+GET   /weather  - Current weather for a city
+        in:query  city (required)
+        200: Current weather                                            WeatherResponse        hdr:X-RateLimit-Limit,X-RateLimit-Remaining
+        404: City not found                                             ErrorResponse
+        429: Rate limit exceeded (per client IP). Wait Retry-After seco ErrorResponse          hdr:Retry-After,X-RateLimit-Limit,X-RateLimit-Remaining
+        503: Location or weather service unreachable or returned an err ErrorResponse
+        422: Validation Error                                           HTTPValidationError
+
+GET   /forecast  - 5-day forecast for a city
+        in:query  city (required)
+        200: Successful Response                                        ForecastResponse
+        404: City not found                                             ErrorResponse
+        503: Location or weather service unreachable or returned an err ErrorResponse
+        422: Validation Error                                           HTTPValidationError
+
+POST  /subscriptions  - Create a heat-alert subscription (safe to retry with the same Idempotency-Key)
+        in:header Idempotency-Key (required)
+        body: SubscriptionCreate
+        201: Created, or a replay of the earlier identical request      Subscription           hdr:Idempotent-Replayed
+        404: City not found                                             ErrorResponse
+        409: The first request with this key is still running; retry sh ErrorResponse          hdr:Retry-After
+        503: Location or weather service unreachable or returned an err ErrorResponse
+        422: Validation Error                                           HTTPValidationError
+
+GET   /subscriptions  - List subscriptions (used to verify retries created no duplicates)
+        200: Successful Response                                        array
+
+GET   /health  - Health
+        200: Successful Response                                        HealthResponse
+
+GET   /metrics  - Metrics
+        200: Prometheus text exposition format                          string
+
+GET   /test-error  - Test Error
+        500: Always fails (test hook for ERROR logging)                 None

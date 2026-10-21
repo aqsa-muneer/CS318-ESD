@@ -1,0 +1,520 @@
+{
+  "uid": "weather-a2",
+  "title": "Weather API: HTTP vs gRPC",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "5s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "tags": [
+    "weather",
+    "a2"
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Calls and error rate (HTTP left, gRPC right)",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "HTTP GET /weather: requests/s by status",
+      "description": "rate() over 1m. 429 = rate limited, 404 = unknown city, 422 = invalid input.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "weather-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "weather-prometheus"
+          },
+          "expr": "sum by (status) (rate(weather_http_requests_total{endpoint=\"/weather\"}[1m]))",
+          "legendFormat": "{{status}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "gRPC: calls/s by method and status",
+      "description": "rate() over 1m.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "weather-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 1,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "weather-prometheus"
+          },
+          "expr": "sum by (rpc_method, grpc_code) (rate(weather_grpc_requests_total[1m]))",
+          "legendFormat": "{{rpc_method}} {{grpc_code}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "HTTP GET /weather: server error rate (5xx / all, 5m window)",
+      "description": "Only server-side failures. 404/422/429 are caller errors and are excluded.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "weather-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "weather-prometheus"
+          },
+          "expr": "(sum(rate(weather_http_requests_total{endpoint=\"/weather\",status=~\"5..\"}[5m])) or vector(0)) / sum(rate(weather_http_requests_total{endpoint=\"/weather\"}[5m]))",
+          "legendFormat": "5xx share",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "gRPC: server error rate by method (5m window)",
+      "description": "UNAVAILABLE/INTERNAL/UNKNOWN/DEADLINE_EXCEEDED/DATA_LOSS, the gRPC analogue of 5xx. NOT_FOUND and INVALID_ARGUMENT are caller errors.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "weather-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 9,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "weather-prometheus"
+          },
+          "expr": "(sum by (rpc_method) (rate(weather_grpc_requests_total{grpc_code=~\"UNAVAILABLE|INTERNAL|UNKNOWN|DEADLINE_EXCEEDED|DATA_LOSS\"}[5m])) or (0 * sum by (rpc_method) (rate(weather_grpc_requests_total[5m])))) / sum by (rpc_method) (rate(weather_grpc_requests_total[5m]))",
+          "legendFormat": "{{rpc_method}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "row",
+      "title": "Latency: p50 / p95 over a 5 minute rate window",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 17,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "HTTP GET /weather: p50 and p95 (5m window)",
+      "description": "histogram_quantile over rate(...[5m]). Measured at the server by the HTTP middleware.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "weather-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "weather-prometheus"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(weather_http_request_duration_seconds_bucket{endpoint=\"/weather\"}[5m])))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "weather-prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(weather_http_request_duration_seconds_bucket{endpoint=\"/weather\"}[5m])))",
+          "legendFormat": "p95",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "gRPC: p50 and p95 by method (5m window)",
+      "description": "Measured at the SERVER, around the handler (excludes network and queueing).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "weather-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 18,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "weather-prometheus"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le, rpc_method) (rate(weather_grpc_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p50 {{rpc_method}}",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "weather-prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, rpc_method) (rate(weather_grpc_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95 {{rpc_method}}",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "type": "heatmap",
+      "title": "HTTP GET /weather: duration histogram",
+      "description": "Each cell = calls whose duration fell in that bucket during the interval.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "weather-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 26,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "weather-prometheus"
+          },
+          "expr": "sum by (le) (increase(weather_http_request_duration_seconds_bucket{endpoint=\"/weather\"}[$__rate_interval]))",
+          "legendFormat": "{{le}}",
+          "refId": "A",
+          "format": "heatmap"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "calculate": false,
+        "rowsFrame": {
+          "layout": "le"
+        },
+        "yAxis": {
+          "unit": "s"
+        },
+        "cellGap": 1,
+        "color": {
+          "scheme": "Spectral",
+          "mode": "scheme"
+        }
+      }
+    },
+    {
+      "id": 10,
+      "type": "heatmap",
+      "title": "gRPC: duration histogram (all methods)",
+      "description": "Same bucket boundaries as the HTTP histogram.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "weather-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 26,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "weather-prometheus"
+          },
+          "expr": "sum by (le) (increase(weather_grpc_request_duration_seconds_bucket[$__rate_interval]))",
+          "legendFormat": "{{le}}",
+          "refId": "A",
+          "format": "heatmap"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "calculate": false,
+        "rowsFrame": {
+          "layout": "le"
+        },
+        "yAxis": {
+          "unit": "s"
+        },
+        "cellGap": 1,
+        "color": {
+          "scheme": "Spectral",
+          "mode": "scheme"
+        }
+      }
+    },
+    {
+      "id": 11,
+      "type": "row",
+      "title": "Saturation: in-flight calls",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 34,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "HTTP: active requests (all endpoints)",
+      "description": "Existing A1 gauge. Includes the Prometheus scrape of /metrics itself.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "weather-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 35,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "weather-prometheus"
+          },
+          "expr": "weather_active_requests{job=\"weather-app\"}",
+          "legendFormat": "active",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "gRPC: in-flight calls by method",
+      "description": "Chosen over message size: the server has a fixed worker pool (default 10). When in-flight reaches the pool size, new calls queue and latency rises.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "weather-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 35,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "weather-prometheus"
+          },
+          "expr": "sum by (rpc_method) (weather_grpc_in_flight_calls)",
+          "legendFormat": "{{rpc_method}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 14,
+      "type": "row",
+      "title": "Project metrics",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 43,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "Idempotency outcomes (POST /subscriptions, 5m rate)",
+      "description": "created / replayed / in_progress / key_reuse. Shows retries being absorbed instead of duplicated.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "weather-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 44,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "weather-prometheus"
+          },
+          "expr": "sum by (result) (rate(weather_idempotency_requests_total[5m]))",
+          "legendFormat": "{{result}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "Open-Meteo call latency, mean by process (5m)",
+      "description": "Existing A1 Summary. A Summary exposes only _sum and _count, so a mean is all it can give.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "weather-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 44,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "weather-prometheus"
+          },
+          "expr": "sum by (job) (rate(weather_external_api_duration_seconds_sum[5m])) / sum by (job) (rate(weather_external_api_duration_seconds_count[5m]))",
+          "legendFormat": "{{job}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    }
+  ],
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  }
+}

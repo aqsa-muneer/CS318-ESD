@@ -1,10 +1,17 @@
-import { useState } from "react";
+import { useState, useEffect } from "react"; //useEffect runs the countdown timer
 import "./App.css";
 
 function App() {
   const [city, setCity] = useState("");
   const [weather, setWeather] = useState(null);
   const [error, setError] = useState("");
+  const [waitSeconds, setWaitSeconds] = useState(0);
+
+  useEffect(() => {
+    if (waitSeconds <= 0) return;
+    const timer = setTimeout(() => setWaitSeconds(waitSeconds - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [waitSeconds]);
 
   async function searchWeather() {
     if (city.trim() === "") {
@@ -12,15 +19,40 @@ function App() {
       return;
     }
 
+    if (waitSeconds > 0) {
+      return;
+    }
+
     setError("");
 
     try {
       const response = await fetch(
-        `http://127.0.0.1:8000/weather?city=${encodeURIComponent(city)}`
+        `http://127.0.0.1:8000/weather?city=${encodeURIComponent(city.trim())}`
       );
 
-      if (!response.ok) {
+      if (response.status === 429) {
+        const retryAfter = parseInt(response.headers.get("Retry-After"), 10);
+        setWeather(null);
+        setWaitSeconds(Number.isNaN(retryAfter) ? 60 : retryAfter);
+        return;
+      }
+
+      if (response.status === 404) {
         throw new Error("City not found.");
+      }
+
+      if (response.status === 422) {
+        throw new Error("Please enter a valid city name (1-100 characters).");
+      }
+
+      if (response.status === 503) {
+        throw new Error(
+          "The weather service is temporarily unavailable. Please try again shortly."
+        );
+      }
+
+      if (!response.ok) {
+        throw new Error("Something went wrong. Please try again.");
       }
 
       const data = await response.json();
@@ -28,7 +60,11 @@ function App() {
       setWeather(data);
     } catch (error) {
       setWeather(null);
-      setError(error.message);
+      setError(
+        error instanceof TypeError
+          ? "Could not reach the server."
+          : error.message
+      );
     }
   }
 
@@ -50,12 +86,16 @@ function App() {
           }}
         />
 
-        <button onClick={searchWeather}>
-          Search
+        <button onClick={searchWeather} disabled={waitSeconds > 0}>
+          {waitSeconds > 0 ? `Wait ${waitSeconds}s` : "Search"}
         </button>
       </div>
 
       {error && <p>{error}</p>}
+
+      {waitSeconds > 0 && (
+        <p>Too many searches. You can search again in {waitSeconds} seconds.</p>
+      )}
 
       {weather && (
         <div>

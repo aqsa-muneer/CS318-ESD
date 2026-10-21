@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package weather.v1;
+
+// gRPC twin of the HTTP endpoints GET /weather and GET /forecast.
+// Both RPCs only read data, so they are safe to retry.
+service WeatherService {
+  // Current weather for a city.
+  // Status codes: OK, INVALID_ARGUMENT (blank/too long city), NOT_FOUND (unknown city),
+  //               UNAVAILABLE (Open-Meteo unreachable).
+  rpc GetCurrentWeather(GetCurrentWeatherRequest) returns (GetCurrentWeatherResponse);
+
+  // 5-day forecast. Same status codes as above.
+  rpc GetForecast(GetForecastRequest) returns (GetForecastResponse);
+}
+
+message GetCurrentWeatherRequest { string city = 1; }
+message GetForecastRequest { string city = 1; }
+
+message Location {
+  string city = 1;
+  string region = 2;
+  string country = 3;
+  double latitude = 4;
+  double longitude = 5;
+  string timezone = 6;
+}
+
+message CurrentWeather {
+  string time = 1;
+  optional double temperature = 2;
+  string temperature_unit = 3;
+  optional double feels_like = 4;
+  optional double humidity = 5;
+  string humidity_unit = 6;
+  optional double precipitation = 7;
+  string precipitation_unit = 8;
+  optional double cloud_cover = 9;
+  string cloud_cover_unit = 10;
+  optional double wind_speed = 11;
+  string wind_speed_unit = 12;
+  optional double wind_direction = 13;
+  string wind_direction_unit = 14;
+  optional int32 weather_code = 15;
+  string condition = 16;
+}
+
+message GetCurrentWeatherResponse {
+  Location location = 1;
+  CurrentWeather current_weather = 2;
+}
+
+message ForecastDay {
+  string date = 1;
+  optional double max_temperature = 2;
+  string max_temperature_unit = 3;
+  optional double min_temperature = 4;
+  string min_temperature_unit = 5;
+  optional double precipitation_probability = 6;
+  string precipitation_probability_unit = 7;
+  optional int32 weather_code = 8;
+  string condition = 9;
+}
+
+message GetForecastResponse {
+  Location location = 1;
+  repeated ForecastDay forecast = 2;
+}

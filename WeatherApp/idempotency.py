@@ -18,7 +18,6 @@ from dataclasses import dataclass
 
 PROCESSING_LEASE_SECONDS = 60  # a crashed/hung attempt cannot block its key forever
 
-
 @dataclass
 class Decision:
     kind: str  # "new" | "replay" | "in_progress" | "key_reuse"

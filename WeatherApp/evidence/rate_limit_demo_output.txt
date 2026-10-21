@@ -1,0 +1,15 @@
+Limit: 5 requests / 10 s, shared by everyone with the same client IP
+
+request  1: HTTP 200  limit=5 remaining=4
+request  2: HTTP 200  limit=5 remaining=3
+request  3: HTTP 200  limit=5 remaining=2
+request  4: HTTP 200  limit=5 remaining=1
+request  5: HTTP 200  limit=5 remaining=0
+request  6: HTTP 429  limit=5 remaining=0 Retry-After=10s
+request  7: HTTP 429  limit=5 remaining=0 Retry-After=10s
+
+429 body: {'detail': 'Rate limit exceeded: 5 requests per 10 seconds. Retry after 10 seconds.'}
+/forecast is not limited: HTTP 200
+
+Waiting Retry-After = 10s ...
+request  9: HTTP 200  limit=5 remaining=4

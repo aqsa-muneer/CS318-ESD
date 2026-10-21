@@ -1,0 +1,595 @@
+openapi: 3.1.0
+info:
+  title: Weather App API
+  description: Weather API
+  version: 1.1.0
+servers:
+- url: http://localhost:8000
+  description: Local development
+paths:
+  /:
+    get:
+      tags:
+      - system
+      summary: Home
+      operationId: home__get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HomeResponse'
+  /weather:
+    get:
+      tags:
+      - weather
+      summary: Current weather for a city
+      operationId: get_weather_weather_get
+      parameters:
+      - name: city
+        in: query
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 100
+          pattern: \S
+          description: City name to look up
+          examples:
+          - Karachi
+          title: City
+        description: City name to look up
+      responses:
+        '200':
+          description: Current weather
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WeatherResponse'
+          headers:
+            X-RateLimit-Limit:
+              description: Requests allowed per window
+              required: true
+              schema:
+                type: integer
+            X-RateLimit-Remaining:
+              description: Requests left in the current window
+              required: true
+              schema:
+                type: integer
+        '404':
+          description: City not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded (per client IP). Wait Retry-After seconds.
+          headers:
+            Retry-After:
+              description: Whole seconds until a request is allowed again
+              required: true
+              schema:
+                type: integer
+                minimum: 1
+            X-RateLimit-Limit:
+              description: Requests allowed per window
+              required: true
+              schema:
+                type: integer
+            X-RateLimit-Remaining:
+              description: Requests left in the current window
+              required: true
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Location or weather service unreachable or returned an error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /forecast:
+    get:
+      tags:
+      - weather
+      summary: 5-day forecast for a city
+      operationId: forecast_forecast_get
+      parameters:
+      - name: city
+        in: query
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 100
+          pattern: \S
+          description: City name to look up
+          examples:
+          - Karachi
+          title: City
+        description: City name to look up
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForecastResponse'
+        '404':
+          description: City not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Location or weather service unreachable or returned an error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /subscriptions:
+    post:
+      tags:
+      - subscriptions
+      summary: Create a heat-alert subscription (safe to retry with the same Idempotency-Key)
+      operationId: create_subscription_subscriptions_post
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 64
+          pattern: ^[A-Za-z0-9_-]+$
+          description: Client-generated unique key (e.g. a UUID). Reuse it when retrying.
+          title: Idempotency-Key
+        description: Client-generated unique key (e.g. a UUID). Reuse it when retrying.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubscriptionCreate'
+      responses:
+        '201':
+          description: Created, or a replay of the earlier identical request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subscription'
+          headers:
+            Idempotent-Replayed:
+              description: '"true" when this is a replay of a stored response'
+              schema:
+                type: string
+        '404':
+          description: City not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: The first request with this key is still running; retry shortly
+          headers:
+            Retry-After:
+              required: true
+              schema:
+                type: integer
+              description: Seconds to wait before retrying
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Location or weather service unreachable or returned an error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - subscriptions
+      summary: List subscriptions (used to verify retries created no duplicates)
+      operationId: list_subscriptions_subscriptions_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Subscription'
+                title: Response List Subscriptions Subscriptions Get
+  /health:
+    get:
+      tags:
+      - system
+      summary: Health
+      operationId: health_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /metrics:
+    get:
+      tags:
+      - system
+      summary: Metrics
+      operationId: metrics_metrics_get
+      responses:
+        '200':
+          description: Prometheus text exposition format
+          content:
+            text/plain:
+              schema:
+                type: string
+  /test-error:
+    get:
+      tags:
+      - internal
+      summary: Test Error
+      operationId: test_error_test_error_get
+      responses:
+        '500':
+          description: Always fails (test hook for ERROR logging)
+          content:
+            application/json:
+              schema: {}
+components:
+  schemas:
+    CurrentWeather:
+      properties:
+        time:
+          type: string
+          title: Time
+        temperature:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Temperature
+        temperature_unit:
+          type: string
+          title: Temperature Unit
+        feels_like:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Feels Like
+        humidity:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Humidity
+        humidity_unit:
+          type: string
+          title: Humidity Unit
+        precipitation:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Precipitation
+        precipitation_unit:
+          type: string
+          title: Precipitation Unit
+        cloud_cover:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Cloud Cover
+        cloud_cover_unit:
+          type: string
+          title: Cloud Cover Unit
+        wind_speed:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Wind Speed
+        wind_speed_unit:
+          type: string
+          title: Wind Speed Unit
+        wind_direction:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Wind Direction
+        wind_direction_unit:
+          type: string
+          title: Wind Direction Unit
+        weather_code:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Weather Code
+        condition:
+          type: string
+          title: Condition
+      type: object
+      required:
+      - time
+      - temperature
+      - temperature_unit
+      - feels_like
+      - humidity
+      - humidity_unit
+      - precipitation
+      - precipitation_unit
+      - cloud_cover
+      - cloud_cover_unit
+      - wind_speed
+      - wind_speed_unit
+      - wind_direction
+      - wind_direction_unit
+      - weather_code
+      - condition
+      title: CurrentWeather
+    ErrorResponse:
+      properties:
+        detail:
+          type: string
+          title: Detail
+          examples:
+          - City not found
+      type: object
+      required:
+      - detail
+      title: ErrorResponse
+      description: Shape of every error we raise ourselves (404, 409, 429, 503).
+    ForecastDay:
+      properties:
+        date:
+          type: string
+          title: Date
+        max_temperature:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Max Temperature
+        max_temperature_unit:
+          type: string
+          title: Max Temperature Unit
+        min_temperature:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Min Temperature
+        min_temperature_unit:
+          type: string
+          title: Min Temperature Unit
+        precipitation_probability:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Precipitation Probability
+        precipitation_probability_unit:
+          type: string
+          title: Precipitation Probability Unit
+        weather_code:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Weather Code
+        condition:
+          type: string
+          title: Condition
+      type: object
+      required:
+      - date
+      - max_temperature
+      - max_temperature_unit
+      - min_temperature
+      - min_temperature_unit
+      - precipitation_probability
+      - precipitation_probability_unit
+      - weather_code
+      - condition
+      title: ForecastDay
+    ForecastLocation:
+      properties:
+        city:
+          type: string
+          title: City
+        region:
+          type: string
+          title: Region
+        country:
+          type: string
+          title: Country
+        timezone:
+          type: string
+          title: Timezone
+      type: object
+      required:
+      - city
+      - region
+      - country
+      - timezone
+      title: ForecastLocation
+    ForecastResponse:
+      properties:
+        location:
+          $ref: '#/components/schemas/ForecastLocation'
+        forecast:
+          items:
+            $ref: '#/components/schemas/ForecastDay'
+          type: array
+          title: Forecast
+      type: object
+      required:
+      - location
+      - forecast
+      title: ForecastResponse
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    HealthResponse:
+      properties:
+        status:
+          type: string
+          title: Status
+        service:
+          type: string
+          title: Service
+      type: object
+      required:
+      - status
+      - service
+      title: HealthResponse
+    HomeResponse:
+      properties:
+        message:
+          type: string
+          title: Message
+      type: object
+      required:
+      - message
+      title: HomeResponse
+    Location:
+      properties:
+        city:
+          type: string
+          title: City
+        region:
+          type: string
+          title: Region
+        country:
+          type: string
+          title: Country
+        latitude:
+          type: number
+          title: Latitude
+        longitude:
+          type: number
+          title: Longitude
+        timezone:
+          type: string
+          title: Timezone
+      type: object
+      required:
+      - city
+      - region
+      - country
+      - latitude
+      - longitude
+      - timezone
+      title: Location
+    Subscription:
+      properties:
+        id:
+          type: string
+          title: Id
+        city:
+          type: string
+          title: City
+        country:
+          type: string
+          title: Country
+        alert_above_c:
+          type: number
+          title: Alert Above C
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - id
+      - city
+      - country
+      - alert_above_c
+      - created_at
+      title: Subscription
+    SubscriptionCreate:
+      properties:
+        city:
+          type: string
+          maxLength: 100
+          minLength: 1
+          title: City
+          examples:
+          - Karachi
+        alert_above_c:
+          type: number
+          maximum: 60.0
+          minimum: -50.0
+          title: Alert Above C
+          description: Alert when the temperature goes above this (deg C)
+          examples:
+          - 40.0
+      additionalProperties: false
+      type: object
+      required:
+      - city
+      - alert_above_c
+      title: SubscriptionCreate
+      description: Body of POST /subscriptions.
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+    WeatherResponse:
+      properties:
+        location:
+          $ref: '#/components/schemas/Location'
+        current_weather:
+          $ref: '#/components/schemas/CurrentWeather'
+      type: object
+      required:
+      - location
+      - current_weather
+      title: WeatherResponse
