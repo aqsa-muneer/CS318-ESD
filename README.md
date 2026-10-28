@@ -11,6 +11,7 @@ cd frontend % npm run dev
 
 ## Run tests: 
 pytest -q
+
 WeatherApp % python -m scripts.load --rounds 40 --pause 2 --burst 80
 Tests use fake_stream.py, an offline stand-in for Open-Meteo. 
 
