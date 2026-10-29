@@ -47,7 +47,7 @@ With 'WEATHER_FAKE_UPSTREAM=1' the weather values are hard-coded and only a few 
 
 To stop: press ctrl+c in each server terminal, and run '**docker compose stop prometheus grafana node-exporter**'.
 
-## Try the API features by hand
+## Try the API features
 
 ### Rate limit (429 and Retry-After)
 
