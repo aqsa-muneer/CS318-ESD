@@ -1,0 +1,10 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+logs/
+grafana/
+prometheus/
+filebeat/
+envoy/
+.git/

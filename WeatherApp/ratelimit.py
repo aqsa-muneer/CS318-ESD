@@ -1,22 +1,40 @@
-"""Sliding-window rate limiter (single instance, in memory).
-
-Policy applied to GET /weather:
-  * LIMIT    : RATE_LIMIT_REQUESTS requests (default 60)
-  * WINDOW   : per rolling RATE_LIMIT_WINDOW_SECONDS (default 60 s)
-  * SHARED BY: everyone with the same client IP (request.client.host).
-               X-Forwarded-For is NOT trusted, so callers behind one NAT/proxy
-               share one budget.
-  * ALLOWED AGAIN: when the oldest counted request leaves the window; the
-               429 response says how many seconds that is in `Retry-After`.
-"""
 import math
 import os
-import threading
 import time
-from collections import deque
+import uuid
 from dataclasses import dataclass
 
+import redis
 from fastapi import HTTPException, Request, Response
+
+from logging_config import logger
+from redis_client import get_redis
+
+# KEYS[1] = this client's sorted set
+# ARGV    = now, window_seconds, limit, unique member id for this request
+# Returns {allowed (1/0), remaining, retry_after_seconds_as_string}
+# (retry is returned as a string because Redis truncates Lua numbers to ints)
+_SLIDING_WINDOW_LUA = """
+local key    = KEYS[1]
+local now    = tonumber(ARGV[1])
+local window = tonumber(ARGV[2])
+local limit  = tonumber(ARGV[3])
+
+-- Forget requests that have left the window (same <= rule as A2)
+redis.call('ZREMRANGEBYSCORE', key, '-inf', now - window)
+
+local count = redis.call('ZCARD', key)
+if count < limit then
+  redis.call('ZADD', key, now, ARGV[4])
+  -- Idle clients disappear on their own (replaces A2's _gc)
+  redis.call('PEXPIRE', key, math.ceil(window * 1000))
+  return {1, limit - count - 1, '0'}
+end
+
+-- Full: allowed again when the oldest request expires
+local oldest = redis.call('ZRANGE', key, 0, 0, 'WITHSCORES')
+return {0, 0, tostring(tonumber(oldest[2]) + window - now)}
+"""
 
 
 @dataclass
@@ -27,39 +45,28 @@ class Decision:
 
 
 class SlidingWindowLimiter:
-    def __init__(self, limit: int, window_seconds: float, clock=time.monotonic):
+    def __init__(self, limit: int, window_seconds: float, client: redis.Redis | None = None,
+                 clock=time.time, prefix: str = "ratelimit:weather:"):
         self.limit = limit
         self.window = window_seconds
-        self._clock = clock          # injectable so tests need no real sleeping
-        self._hits: dict[str, deque] = {}
-        self._lock = threading.Lock()  # FastAPI runs sync endpoints in a thread pool
+        self._clock = clock          # still injectable for tests
+        self._prefix = prefix
+        self._redis = client or get_redis()
+        self._script = self._redis.register_script(_SLIDING_WINDOW_LUA)
 
     def check(self, key: str) -> Decision:
         now = self._clock()
-        with self._lock:
-            hits = self._hits.setdefault(key, deque())
-            # Forget requests that have left the window
-            while hits and hits[0] <= now - self.window:
-                hits.popleft()
-            if len(hits) < self.limit:
-                hits.append(now)
-                self._gc(now)
-                return Decision(True, self.limit - len(hits), 0)
-            # Full: allowed again when the oldest request expires. Rounded UP
-            # because Retry-After is whole seconds (rounding down = retry too early).
-            retry = math.ceil(hits[0] + self.window - now)
-            return Decision(False, 0, max(1, retry))
-
-    def _gc(self, now: float) -> None:
-        """Drop idle clients so the dict cannot grow without bound."""
-        if len(self._hits) < 10_000:
-            return
-        for k in [k for k, h in self._hits.items() if not h or h[-1] <= now - self.window]:
-            del self._hits[k]
+        member = f"{now}:{uuid.uuid4().hex}"   # unique, so equal timestamps don't collide
+        allowed, remaining, retry = self._script(
+            keys=[self._prefix + key], args=[now, self.window, self.limit, member])
+        if int(allowed) == 1:
+            return Decision(True, int(remaining), 0)
+        # Rounded UP because Retry-After is whole seconds (rounding down = retry too early).
+        return Decision(False, 0, max(1, math.ceil(float(retry))))
 
     def reset(self) -> None:
-        with self._lock:
-            self._hits.clear()
+        for k in self._redis.scan_iter(match=self._prefix + "*"):
+            self._redis.delete(k)
 
 
 weather_limiter = SlidingWindowLimiter(
@@ -67,12 +74,29 @@ weather_limiter = SlidingWindowLimiter(
     window_seconds=float(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60")),
 )
 
+TRUSTED_PROXIES = {ip.strip() for ip in os.getenv("TRUSTED_PROXIES", "").split(",") if ip.strip()}
+
+
+def client_ip(request: Request) -> str:
+    """The real caller's IP. X-Forwarded-For is trusted ONLY from our own proxy."""
+    peer = request.client.host if request.client else "unknown"
+    if peer in TRUSTED_PROXIES:
+        xff = request.headers.get("x-forwarded-for", "")
+        if xff:
+            return xff.split(",")[-1].strip()   # the entry Envoy itself appended
+    return peer
+
 
 def rate_limit_weather(request: Request, response: Response) -> None:
     """FastAPI dependency: runs BEFORE the endpoint, so a limited request never
     reaches Open-Meteo. Every request to /weather counts, valid or not."""
-    client = request.client.host if request.client else "unknown"
-    d = weather_limiter.check(client)
+    client = client_ip(request)
+    try:
+        d = weather_limiter.check(client)
+    except redis.RedisError:
+        logger.warning("Rate limiter unavailable, allowing request", extra={
+            "request_id": getattr(request.state, "request_id", None), "endpoint": "/weather"})
+        return
     limit_headers = {
         "X-RateLimit-Limit": str(weather_limiter.limit),
         "X-RateLimit-Remaining": str(d.remaining),

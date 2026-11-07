@@ -3,6 +3,7 @@ import os
 import signal
 from concurrent import futures
 import grpc
+from grpc_health.v1 import health, health_pb2, health_pb2_grpc  # A3: standard health service
 from prometheus_client import start_http_server
 import weather_pb2
 import weather_pb2_grpc
@@ -82,6 +83,13 @@ def build_server(port=50051, max_workers=10):
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=max_workers),
                          interceptors=[MetricsInterceptor()])
     weather_pb2_grpc.add_WeatherServiceServicer_to_server(WeatherService(), server)
+    # A3: grpc.health.v1 -- what Envoy's gRPC active health check calls.
+    # "" = the whole server; the second name = this specific service.
+    health_servicer = health.HealthServicer()
+    health_pb2_grpc.add_HealthServicer_to_server(health_servicer, server)
+    for service in ("", "weather.v1.WeatherService"):
+        health_servicer.set(service, health_pb2.HealthCheckResponse.SERVING)
+    server.health_servicer = health_servicer  # kept so shutdown can flip it
     bound = server.add_insecure_port(f"[::]:{port}")
     return server, bound
 
@@ -92,7 +100,12 @@ if __name__ == "__main__":
     start_http_server(metrics_port)
     server.start()
     print(f"gRPC on :{port}, metrics on :{metrics_port}/metrics", flush=True)
-    signal.signal(signal.SIGTERM, lambda *_: server.stop(grace=5))
+    def _shutdown(*_):
+        # A3: report NOT_SERVING first, so health checks fail and Envoy stops
+        # sending new calls, then let in-flight calls finish (grace=5).
+        server.health_servicer.enter_graceful_shutdown()
+        server.stop(grace=5)
+    signal.signal(signal.SIGTERM, _shutdown)
     try:
         server.wait_for_termination()
     except KeyboardInterrupt:

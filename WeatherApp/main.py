@@ -28,10 +28,13 @@ if os.getenv("WEATHER_FAKE_UPSTREAM") == "1":
     import fake_upstream
     fake_upstream.install()
 
+# Assignment 3: which replica this process is (A, B or C). Set per container in docker-compose.
+REPLICA_ID = os.getenv("REPLICA_ID", "local")
+
 app = FastAPI(
     title="Weather App API",
     description="Weather API",
-    version="1.1.0", # changed from 1.0 to 1.1: validation, rate limit, POST /subscriptions
+    version="1.1.0",
     servers=[{"url": "http://localhost:8000", "description": "Local development"}]
 )
 
@@ -44,7 +47,7 @@ app.add_middleware( #from fastapi.middleware.cors import CORSMiddleware
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["Retry-After", "X-Request-ID", "X-RateLimit-Limit", "X-RateLimit-Remaining", "Idempotent-Replayed"]
+    expose_headers=["Retry-After", "X-Request-ID", "X-Replica-Id", "X-RateLimit-Limit", "X-RateLimit-Remaining", "Idempotent-Replayed"]
 )
 def endpoint_label(request) -> str:
     """Route TEMPLATE (e.g. "/weather") instead of the raw URL path.
@@ -57,7 +60,7 @@ def endpoint_label(request) -> str:
 @app.middleware("http")
 async def observability_middleware(request, call_next):
     # Give every HTTP request a unique ID.
-    request_id = str(uuid.uuid4())
+    request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
     # Make the request ID available to endpoint functions.
     request.state.request_id = request_id
     # Prometheus Gauge: one more request is now active.
@@ -102,6 +105,7 @@ async def observability_middleware(request, call_next):
         )
         # Return request ID to the client as well.
         response.headers["X-Request-ID"] = request_id
+        response.headers["X-Replica-Id"] = REPLICA_ID
         return response
     except Exception:
         # Calculate how long the request ran before failing.
@@ -313,7 +317,8 @@ def create_subscription(
         description="Client-generated unique key (e.g. a UUID). Reuse it when retrying.")],
 ):
     key = idempotency_key
-    decision = idempotency_store.begin(key, fingerprint(body.model_dump()))
+    fp = fingerprint(body.model_dump())  # A3: kept, because finish() now needs it too
+    decision = idempotency_store.begin(key, fp)
 
     if decision.kind == "replay":
         # Same key, same body, already done: return the stored answer, do NOT create again.
@@ -358,7 +363,7 @@ def create_subscription(
     # THE side effect, kept as the last step; the result is stored immediately after.
     record = subscription_repo.create(location["name"], location["country"], body.alert_above_c)
     result = Subscription(**record).model_dump(mode="json")
-    idempotency_store.finish(key, 201, result)
+    idempotency_store.finish(key, 201, result, fp) # fingerprint is calculated once and saved in fp, then used both when claiming the key and when saving the finished result.
     IDEMPOTENCY_REQUESTS.labels(result="created").inc()
     return result
 

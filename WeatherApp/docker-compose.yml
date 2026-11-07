@@ -1,19 +1,131 @@
+# =====================================================================
+# A3 — Weather App behind Envoy, three replicas (A, B, C)
+# =====================================================================
+
+# ---------------------------------------------------------------------
+# Shared definition for every app replica (YAML anchor).
+# app-a / app-b / app-c below reuse this and only change REPLICA_ID
+# and their fixed IP address.
+# ---------------------------------------------------------------------
+x-weather-app: &weather-app
+  build: .
+  image: weather-app:latest
+  # A tiny init process as PID 1: passes `docker stop` signals on and
+  # cleans up the background gRPC process (each container runs two).
+  init: true
+  # "no": if a replica is stopped (Part D), Docker must not restart it
+  # behind your back.
+  restart: "no"
+  depends_on:
+    - redis
+  volumes:
+    # Logs go to ./logs on your Mac, which Filebeat already reads.
+    # Each process writes its own file: weather-app-<REPLICA>-<http|grpc>.log
+    - ./logs:/var/log/weather-app
+  # Reachable only inside the Docker network, not from your Mac:
+  # clients must go through Envoy; Prometheus scrapes replicas directly.
+  expose:
+    - "8000"    # HTTP + its /metrics
+    - "50051"   # gRPC
+    - "9101"    # gRPC server's /metrics
+
+x-app-env: &app-env
+  # Where the shared Redis is (service name "redis" inside the network)
+  REDIS_URL: redis://redis:6379/0
+  # Folder mounted from ./logs (logging_config.py writes here)
+  LOG_DIR: /var/log/weather-app
+  # Fake Open-Meteo during tests, so results measure our system, not a
+  # free external API. Real API: WEATHER_FAKE_UPSTREAM=0 docker compose up -d
+  WEATHER_FAKE_UPSTREAM: "${WEATHER_FAKE_UPSTREAM:-1}"
+  # Only requests arriving from Envoy may supply the client IP through
+  # X-Forwarded-For (used by the rate limiter, Step 5)
+  TRUSTED_PROXIES: "172.28.0.10"
+
 services:
-  # PROMETHEUS
-  # Collects and stores metrics from FastAPI
+  # -------------------------------------------------------------------
+  # REDIS — the one shared store for subscriptions, rate-limit counters
+  # and idempotency records, so every replica sees the same state.
+  # -------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: weather-redis
+    # Append-only file: every write is logged to disk, so subscriptions
+    # AND the idempotency records that protect them survive a Redis
+    # restart together.
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+
+  # -------------------------------------------------------------------
+  # APP REPLICAS — same image, same code; only identity and IP differ
+  # -------------------------------------------------------------------
+  app-a:
+    <<: *weather-app
+    container_name: weather-app-a
+    environment:
+      <<: *app-env
+      REPLICA_ID: "A"
+    networks:
+      default:
+        ipv4_address: 172.28.0.11
+
+  app-b:
+    <<: *weather-app
+    container_name: weather-app-b
+    environment:
+      <<: *app-env
+      REPLICA_ID: "B"
+    networks:
+      default:
+        ipv4_address: 172.28.0.12
+
+  app-c:
+    <<: *weather-app
+    container_name: weather-app-c
+    environment:
+      <<: *app-env
+      REPLICA_ID: "C"
+    networks:
+      default:
+        ipv4_address: 172.28.0.13
+
+  # -------------------------------------------------------------------
+  # ENVOY — the only entry point for client traffic
+  # -------------------------------------------------------------------
+  envoy:
+    image: envoyproxy/envoy:v1.31-latest
+    container_name: weather-envoy
+    command: ["envoy", "-c", "/etc/envoy/envoy.yaml", "--log-level", "info"]
+    environment:
+      # Run as root inside the container so Envoy can write its access
+      # log into the mounted ./logs/envoy folder.
+      ENVOY_UID: "0"
+    depends_on:
+      - app-a
+      - app-b
+      - app-c
+    volumes:
+      - ./envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
+      - ./logs/envoy:/var/log/envoy
+    networks:
+      default:
+        ipv4_address: 172.28.0.10
+    ports:
+      - "8080:10000"    # HTTP clients  -> http://localhost:8080
+      - "50051:10001"   # gRPC clients  -> localhost:50051
+      - "9901:9901"     # Envoy admin page (clusters, stats)
+
+  # -------------------------------------------------------------------
+  # Everything below is unchanged from A1/A2
+  # -------------------------------------------------------------------
   prometheus:
     image: prom/prometheus:latest
-
     container_name: weather-prometheus
-
     ports:
       - "9090:9090"
-
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
 
-  # GRAFANA
-  # Visualizes the metrics stored by Prometheus
   grafana:
     image: grafana/grafana:latest
     container_name: weather-grafana
@@ -26,16 +138,6 @@ services:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
 
-
-   # NODE EXPORTER -- exposes system level metrics
-  # node-exporter:
-  #   image: prom/node-exporter:latest
-  #   container_name: weather-node-exporter
-
-  #   ports:
-  #     - "9100:9100"
-
-  # NODE EXPORTER -- exposes system level metrics
   node-exporter:
     image: prom/node-exporter:latest
     container_name: weather-node-exporter
@@ -52,56 +154,49 @@ services:
     ports:
       - "9100:9100"
 
-  # ELASTICSEARCH
-  # Stores application logs collected by Filebeat
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
     container_name: weather-elasticsearch
-
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=false
-
     ports:
       - "9200:9200"
-
     volumes:
       - elasticsearch-data:/usr/share/elasticsearch/data
 
-
-  # KIBANA
-  # Provides a UI to search and visualize logs stored in Elasticsearch
   kibana:
     image: docker.elastic.co/kibana/kibana:8.15.3
     container_name: weather-kibana
-
     environment:
       - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
-
     ports:
       - "5601:5601"
-
     depends_on:
       - elasticsearch
 
-  # FILEBEAT
-  # Reads FastAPI JSON logs and sends them to Elasticsearch
   filebeat:
     image: docker.elastic.co/beats/filebeat:8.15.3
     container_name: weather-filebeat
-
     user: root
-
     depends_on:
       - elasticsearch
       - kibana
-
     volumes:
       - ./filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
       - ./logs:/var/log/weather-app:ro
-
     command: ["filebeat", "-e", "--strict.perms=false"]
+
+# ---------------------------------------------------------------------
+# A fixed address range so replicas and Envoy get fixed IPs (see notes).
+# ---------------------------------------------------------------------
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
 
 volumes:
   grafana-data:
   elasticsearch-data:
+  redis-data:

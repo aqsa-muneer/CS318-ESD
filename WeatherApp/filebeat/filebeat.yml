@@ -1,15 +1,48 @@
 filebeat.inputs:
+
+  # App logs: one file per replica per server, e.g.
+  #   weather-app-A-http.log, weather-app-A-grpc.log, ...
+  # (unchanged from A1/A2 -- the glob already matches the new names,
+  #  and it does NOT descend into the envoy/ subfolder)
   - type: filestream
     id: weather-app-logs
     enabled: true
-
     paths:
       - /var/log/weather-app/*.log
-
     parsers:
       - ndjson:
-          target: "app"
+          target: "app"          # fields land under app.*, as before
           add_error_key: true
+    processors:
+      # A3: use the time the app logged the event as @timestamp, not the
+      # (slightly later) time Filebeat read it, so Kibana time ranges line up
+      # with Grafana's for the same run.
+      - timestamp:
+          field: app.timestamp
+          layouts:
+            - '2006-01-02T15:04:05Z07:00'
+          ignore_missing: true
+
+  # -------------------------------------------------------------------
+  # A3: Envoy's JSON access log (one line per proxied HTTP request / gRPC call)
+  # -------------------------------------------------------------------
+  - type: filestream
+    id: envoy-access-logs
+    enabled: true
+    paths:
+      - /var/log/weather-app/envoy/*.log
+    parsers:
+      - ndjson:
+          # A separate namespace (envoy.*) so Envoy's fields can never clash
+          # with the app's in Elasticsearch's mapping (e.g. both have "status").
+          target: "envoy"
+          add_error_key: true
+    processors:
+      - timestamp:
+          field: envoy.start_time
+          layouts:
+            - '2006-01-02T15:04:05Z07:00'
+          ignore_missing: true
 
 output.elasticsearch:
   hosts: ["http://elasticsearch:9200"]

@@ -36,8 +36,7 @@ class RequestFailed(Exception):
 class CircuitBreaker:
     """closed    -> normal; counts CONSECUTIVE failed attempts
     open      -> calls are refused instantly
-    half_open -> after the recovery period ONE probe call is allowed:
-                 success -> closed, failure -> open again for another full period
+    half_open -> after the recovery period ONE probe call is allowed: success -> closed, failure -> open again for another full period
     """
     CLOSED, OPEN, HALF_OPEN = "closed", "open", "half_open"
 
