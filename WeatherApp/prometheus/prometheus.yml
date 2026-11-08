@@ -1,23 +1,50 @@
 global:
+  # 5s so short events -- B stopping and restarting in Part D --
+  # show up clearly on the dashboard. (Same as A1/A2.)
   scrape_interval: 5s
+  evaluation_interval: 5s
 
 scrape_configs:
-  - job_name: "weather-app"
-    metrics_path: /metrics
-    static_configs:
-      - targets:
-          - "host.docker.internal:8000"
 
-  - job_name: "weather-grpc"
+  # HTTP side of each replica: FastAPI's /metrics on port 8000.
+  # Job name kept from A1/A2 ("weather-app") so existing dashboard
+  # queries still match. Each replica is scraped DIRECTLY at its own
+  # address, never through Envoy. Prometheus attaches the `replica`
+  # label, so the app code does not need to add it to every metric.
+  - job_name: weather-app
     metrics_path: /metrics
     static_configs:
-      - targets:
-          - "host.docker.internal:9101"
+      - targets: ["app-a:8000"]
+        labels: { replica: "A" }
+      - targets: ["app-b:8000"]
+        labels: { replica: "B" }
+      - targets: ["app-c:8000"]
+        labels: { replica: "C" }
 
-  - job_name: "node-exporter"
+  # gRPC side of each replica: the gRPC server is a separate process in
+  # each container with its own metrics port (9101). Job name kept from A2.
+  - job_name: weather-grpc
     metrics_path: /metrics
     static_configs:
-      - targets:
-          - "node-exporter:9100"
+      - targets: ["app-a:9101"]
+        labels: { replica: "A" }
+      - targets: ["app-b:9101"]
+        labels: { replica: "B" }
+      - targets: ["app-c:9101"]
+        labels: { replica: "C" }
+
+  # Envoy's own metrics, read from its admin port (not the balanced
+  # route): requests per cluster and endpoint, active requests,
+  # upstream latency, and (Part D) health-check results.
+  - job_name: envoy
+    metrics_path: /stats/prometheus
+    static_configs:
+      - targets: ["envoy:9901"]
+
+  # Host-level metrics, unchanged from A1/A2 (label kept)
+  - job_name: node-exporter
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["node-exporter:9100"]
         labels:
           machine: "AM-dev-machine"

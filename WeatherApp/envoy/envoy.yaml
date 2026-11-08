@@ -108,7 +108,7 @@ static_resources:
                   # HTTP status is (almost) always 200 for gRPC; the real
                   # outcome is the gRPC status code.
                   status: "%RESPONSE_CODE%"
-                  grpc_status: "%GRPC_STATUS%"
+                  grpc_status: "%GRPC_STATUS(SNAKE_STRING)%"
                   response_flags: "%RESPONSE_FLAGS%"
                   duration_ms: "%DURATION%"
                   upstream_cluster: "%UPSTREAM_CLUSTER%"
