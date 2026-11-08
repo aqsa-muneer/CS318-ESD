@@ -1,0 +1,10 @@
+# Python virtual environment (dependencies: rebuilt from requirements.txt)
+venv/
+.venv/
+# Python bytecode caches
+__pycache__/
+*.pyc
+# Runtime logs written by the replicas and Envoy
+logs/
+# macOS folder metadata
+.DS_Store
