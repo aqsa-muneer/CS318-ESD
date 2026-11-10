@@ -1,0 +1,2226 @@
+{
+    "id": null,
+    "uid": "a3-load-balancing",
+    "title": "Load balancing per replica (HTTP + gRPC)",
+    "description": "Per-replica request rate, share, active requests, p50/p95 and errors for HTTP and gRPC behind Envoy. All rates and quantiles use a 30 s window.",
+    "tags": [
+      "a3",
+      "envoy",
+      "load-balancing"
+    ],
+    "timezone": "browser",
+    "editable": true,
+    "schemaVersion": 39,
+    "version": 2,
+    "refresh": "5s",
+    "time": {
+      "from": "now-15m",
+      "to": "now"
+    },
+    "templating": {
+      "list": [
+        {
+          "name": "datasource",
+          "label": "Data source",
+          "type": "datasource",
+          "query": "prometheus",
+          "current": {},
+          "hide": 0,
+          "refresh": 1,
+          "regex": "",
+          "options": []
+        }
+      ]
+    },
+    "annotations": {
+      "list": []
+    },
+    "panels": [
+      {
+        "id": 1,
+        "type": "row",
+        "title": "HTTP — GET /forecast through Envoy :8080",
+        "collapsed": false,
+        "gridPos": {
+          "x": 0,
+          "y": 0,
+          "w": 24,
+          "h": 1
+        },
+        "panels": []
+      },
+      {
+        "id": 2,
+        "type": "timeseries",
+        "title": "Request rate per replica (30 s window)",
+        "description": "Requests per second each replica handled. Window: 30 s sliding (rate/quantile over [30s]), scrape every 5 s. Excludes /metrics, /health and gRPC health checks.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "gridPos": {
+          "x": 0,
+          "y": 1,
+          "w": 8,
+          "h": 8
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            },
+            "expr": "(sum by (replica) (rate(weather_http_requests_total{job=\"weather-app\", endpoint!~\"/metrics|/health\"}[30s]))\n  or sum by (replica) (up{job=\"weather-app\"}) * 0)",
+            "legendFormat": "{{replica}}",
+            "instant": false,
+            "range": true
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "reqps",
+            "custom": {
+              "lineWidth": 2,
+              "fillOpacity": 0,
+              "showPoints": "never",
+              "spanNulls": false,
+              "axisSoftMin": 0
+            },
+            "color": {
+              "mode": "palette-classic"
+            }
+          },
+          "overrides": [
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "A( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "blue"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "B( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "orange"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "C( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "green"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": ".* p95"
+              },
+              "properties": [
+                {
+                  "id": "custom.lineStyle",
+                  "value": {
+                    "fill": "dash",
+                    "dash": [
+                      10,
+                      6
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "options": {
+          "legend": {
+            "displayMode": "table",
+            "placement": "bottom",
+            "calcs": [
+              "lastNotNull",
+              "mean",
+              "max"
+            ]
+          },
+          "tooltip": {
+            "mode": "multi",
+            "sort": "none"
+          }
+        }
+      },
+      {
+        "id": 3,
+        "type": "timeseries",
+        "title": "Share of total traffic (30 s window)",
+        "description": "Each replica's rate divided by the total. Dashed line = 33.3% (equal round robin). Window: 30 s sliding (rate/quantile over [30s]), scrape every 5 s.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "gridPos": {
+          "x": 8,
+          "y": 1,
+          "w": 8,
+          "h": 8
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            },
+            "expr": "(sum by (replica) (rate(weather_http_requests_total{job=\"weather-app\", endpoint!~\"/metrics|/health\"}[30s]))\n  or sum by (replica) (up{job=\"weather-app\"}) * 0)\n/ ignoring(replica) group_left\nsum(rate(weather_http_requests_total{job=\"weather-app\", endpoint!~\"/metrics|/health\"}[30s]))",
+            "legendFormat": "{{replica}}",
+            "instant": false,
+            "range": true
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "custom": {
+              "lineWidth": 2,
+              "fillOpacity": 0,
+              "showPoints": "never",
+              "spanNulls": false,
+              "axisSoftMin": 0,
+              "thresholdsStyle": {
+                "mode": "dashed"
+              }
+            },
+            "color": {
+              "mode": "palette-classic"
+            },
+            "min": 0,
+            "max": 1,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "transparent",
+                  "value": null
+                },
+                {
+                  "color": "red",
+                  "value": 0.3333
+                }
+              ]
+            }
+          },
+          "overrides": [
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "A( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "blue"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "B( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "orange"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "C( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "green"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": ".* p95"
+              },
+              "properties": [
+                {
+                  "id": "custom.lineStyle",
+                  "value": {
+                    "fill": "dash",
+                    "dash": [
+                      10,
+                      6
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "options": {
+          "legend": {
+            "displayMode": "table",
+            "placement": "bottom",
+            "calcs": [
+              "lastNotNull",
+              "mean",
+              "max"
+            ]
+          },
+          "tooltip": {
+            "mode": "multi",
+            "sort": "none"
+          }
+        }
+      },
+      {
+        "id": 4,
+        "type": "bargauge",
+        "title": "Share over selected time range",
+        "description": "Share of all requests in the dashboard's time range (increase over $__range). Set the time range to a run's window to read that run's A/B/C split.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "gridPos": {
+          "x": 16,
+          "y": 1,
+          "w": 4,
+          "h": 8
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            },
+            "expr": "(sum by (replica) (increase(weather_http_requests_total{job=\"weather-app\", endpoint!~\"/metrics|/health\"}[$__range]))\n  or sum by (replica) (up{job=\"weather-app\"}) * 0)\n/ ignoring(replica) group_left\nsum(increase(weather_http_requests_total{job=\"weather-app\", endpoint!~\"/metrics|/health\"}[$__range]))",
+            "legendFormat": "{{replica}}",
+            "instant": true,
+            "range": false
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "min": 0,
+            "color": {
+              "mode": "palette-classic"
+            },
+            "max": 1
+          },
+          "overrides": [
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "A( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "blue"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "B( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "orange"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "C( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "green"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": ".* p95"
+              },
+              "properties": [
+                {
+                  "id": "custom.lineStyle",
+                  "value": {
+                    "fill": "dash",
+                    "dash": [
+                      10,
+                      6
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "options": {
+          "orientation": "horizontal",
+          "displayMode": "basic",
+          "showUnfilled": true,
+          "valueMode": "color",
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ],
+            "fields": "",
+            "values": false
+          }
+        }
+      },
+      {
+        "id": 5,
+        "type": "bargauge",
+        "title": "Requests in selected time range",
+        "description": "Requests each replica handled in the dashboard's time range (Prometheus increase(); may be slightly fractional). Compare with Envoy's access log for the same range.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "gridPos": {
+          "x": 20,
+          "y": 1,
+          "w": 4,
+          "h": 8
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            },
+            "expr": "(sum by (replica) (increase(weather_http_requests_total{job=\"weather-app\", endpoint!~\"/metrics|/health\"}[$__range]))\n  or sum by (replica) (up{job=\"weather-app\"}) * 0)",
+            "legendFormat": "{{replica}}",
+            "instant": true,
+            "range": false
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "min": 0,
+            "color": {
+              "mode": "palette-classic"
+            }
+          },
+          "overrides": [
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "A( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "blue"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "B( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "orange"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "C( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "green"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": ".* p95"
+              },
+              "properties": [
+                {
+                  "id": "custom.lineStyle",
+                  "value": {
+                    "fill": "dash",
+                    "dash": [
+                      10,
+                      6
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "options": {
+          "orientation": "horizontal",
+          "displayMode": "basic",
+          "showUnfilled": true,
+          "valueMode": "color",
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ],
+            "fields": "",
+            "values": false
+          }
+        }
+      },
+      {
+        "id": 6,
+        "type": "timeseries",
+        "title": "Active requests per replica",
+        "description": "In-progress requests per replica (gauge, sampled every 5 s). Minus 1 because the HTTP middleware also counts the /metrics scrape that reads it.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "gridPos": {
+          "x": 0,
+          "y": 9,
+          "w": 8,
+          "h": 8
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            },
+            "expr": "sum by (replica) (weather_active_requests{job=\"weather-app\"}) - 1",
+            "legendFormat": "{{replica}}",
+            "instant": false,
+            "range": true
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "custom": {
+              "lineWidth": 2,
+              "fillOpacity": 0,
+              "showPoints": "never",
+              "spanNulls": false,
+              "axisSoftMin": 0
+            },
+            "color": {
+              "mode": "palette-classic"
+            }
+          },
+          "overrides": [
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "A( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "blue"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "B( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "orange"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "C( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "green"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": ".* p95"
+              },
+              "properties": [
+                {
+                  "id": "custom.lineStyle",
+                  "value": {
+                    "fill": "dash",
+                    "dash": [
+                      10,
+                      6
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "options": {
+          "legend": {
+            "displayMode": "table",
+            "placement": "bottom",
+            "calcs": [
+              "lastNotNull",
+              "mean",
+              "max"
+            ]
+          },
+          "tooltip": {
+            "mode": "multi",
+            "sort": "none"
+          }
+        }
+      },
+      {
+        "id": 7,
+        "type": "timeseries",
+        "title": "p50 / p95 response time per replica (30 s window)",
+        "description": "Server-side latency estimated from histogram buckets (linear interpolation inside a bucket). Window: 30 s sliding (rate/quantile over [30s]), scrape every 5 s.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "gridPos": {
+          "x": 8,
+          "y": 9,
+          "w": 8,
+          "h": 8
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            },
+            "expr": "histogram_quantile(0.50, sum by (replica, le) (rate(weather_http_request_duration_seconds_bucket{job=\"weather-app\", endpoint!~\"/metrics|/health\"}[30s]))) > 0",
+            "legendFormat": "{{replica}} p50",
+            "instant": false,
+            "range": true
+          },
+          {
+            "refId": "B",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            },
+            "expr": "histogram_quantile(0.95, sum by (replica, le) (rate(weather_http_request_duration_seconds_bucket{job=\"weather-app\", endpoint!~\"/metrics|/health\"}[30s]))) > 0",
+            "legendFormat": "{{replica}} p95",
+            "instant": false,
+            "range": true
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "custom": {
+              "lineWidth": 2,
+              "fillOpacity": 0,
+              "showPoints": "never",
+              "spanNulls": false,
+              "axisSoftMin": 0
+            },
+            "color": {
+              "mode": "palette-classic"
+            }
+          },
+          "overrides": [
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "A( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "blue"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "B( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "orange"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "C( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "green"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": ".* p95"
+              },
+              "properties": [
+                {
+                  "id": "custom.lineStyle",
+                  "value": {
+                    "fill": "dash",
+                    "dash": [
+                      10,
+                      6
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "options": {
+          "legend": {
+            "displayMode": "table",
+            "placement": "bottom",
+            "calcs": [
+              "lastNotNull",
+              "mean",
+              "max"
+            ]
+          },
+          "tooltip": {
+            "mode": "multi",
+            "sort": "none"
+          }
+        }
+      },
+      {
+        "id": 8,
+        "type": "timeseries",
+        "title": "Errors by status per replica (30 s window)",
+        "description": "Non-success responses per second, by replica and status. Empty = no errors. Window: 30 s sliding (rate/quantile over [30s]), scrape every 5 s.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "gridPos": {
+          "x": 16,
+          "y": 9,
+          "w": 8,
+          "h": 8
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            },
+            "expr": "sum by (replica, status) (rate(weather_http_requests_total{job=\"weather-app\", endpoint!~\"/metrics|/health\", status!~\"2..\"}[30s])) > 0",
+            "legendFormat": "{{replica}} {{status}}",
+            "instant": false,
+            "range": true
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "reqps",
+            "custom": {
+              "lineWidth": 2,
+              "fillOpacity": 0,
+              "showPoints": "never",
+              "spanNulls": false,
+              "axisSoftMin": 0
+            },
+            "color": {
+              "mode": "palette-classic"
+            }
+          },
+          "overrides": [
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "A( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "blue"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "B( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "orange"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "C( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "green"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": ".* p95"
+              },
+              "properties": [
+                {
+                  "id": "custom.lineStyle",
+                  "value": {
+                    "fill": "dash",
+                    "dash": [
+                      10,
+                      6
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "options": {
+          "legend": {
+            "displayMode": "table",
+            "placement": "bottom",
+            "calcs": [
+              "lastNotNull",
+              "mean",
+              "max"
+            ]
+          },
+          "tooltip": {
+            "mode": "multi",
+            "sort": "none"
+          }
+        }
+      },
+      {
+        "id": 9,
+        "type": "row",
+        "title": "gRPC — GetForecast through Envoy :50051",
+        "collapsed": false,
+        "gridPos": {
+          "x": 0,
+          "y": 17,
+          "w": 24,
+          "h": 1
+        },
+        "panels": []
+      },
+      {
+        "id": 10,
+        "type": "timeseries",
+        "title": "Request rate per replica (30 s window)",
+        "description": "Requests per second each replica handled. Window: 30 s sliding (rate/quantile over [30s]), scrape every 5 s. Excludes /metrics, /health and gRPC health checks.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "gridPos": {
+          "x": 0,
+          "y": 18,
+          "w": 8,
+          "h": 8
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            },
+            "expr": "(sum by (replica) (rate(weather_grpc_requests_total{job=\"weather-grpc\", rpc_method!=\"Check\"}[30s]))\n  or sum by (replica) (up{job=\"weather-grpc\"}) * 0)",
+            "legendFormat": "{{replica}}",
+            "instant": false,
+            "range": true
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "reqps",
+            "custom": {
+              "lineWidth": 2,
+              "fillOpacity": 0,
+              "showPoints": "never",
+              "spanNulls": false,
+              "axisSoftMin": 0
+            },
+            "color": {
+              "mode": "palette-classic"
+            }
+          },
+          "overrides": [
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "A( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "blue"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "B( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "orange"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "C( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "green"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": ".* p95"
+              },
+              "properties": [
+                {
+                  "id": "custom.lineStyle",
+                  "value": {
+                    "fill": "dash",
+                    "dash": [
+                      10,
+                      6
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "options": {
+          "legend": {
+            "displayMode": "table",
+            "placement": "bottom",
+            "calcs": [
+              "lastNotNull",
+              "mean",
+              "max"
+            ]
+          },
+          "tooltip": {
+            "mode": "multi",
+            "sort": "none"
+          }
+        }
+      },
+      {
+        "id": 11,
+        "type": "timeseries",
+        "title": "Share of total traffic (30 s window)",
+        "description": "Each replica's rate divided by the total. Dashed line = 33.3% (equal round robin). Window: 30 s sliding (rate/quantile over [30s]), scrape every 5 s.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "gridPos": {
+          "x": 8,
+          "y": 18,
+          "w": 8,
+          "h": 8
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            },
+            "expr": "(sum by (replica) (rate(weather_grpc_requests_total{job=\"weather-grpc\", rpc_method!=\"Check\"}[30s]))\n  or sum by (replica) (up{job=\"weather-grpc\"}) * 0)\n/ ignoring(replica) group_left\nsum(rate(weather_grpc_requests_total{job=\"weather-grpc\", rpc_method!=\"Check\"}[30s]))",
+            "legendFormat": "{{replica}}",
+            "instant": false,
+            "range": true
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "custom": {
+              "lineWidth": 2,
+              "fillOpacity": 0,
+              "showPoints": "never",
+              "spanNulls": false,
+              "axisSoftMin": 0,
+              "thresholdsStyle": {
+                "mode": "dashed"
+              }
+            },
+            "color": {
+              "mode": "palette-classic"
+            },
+            "min": 0,
+            "max": 1,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "transparent",
+                  "value": null
+                },
+                {
+                  "color": "red",
+                  "value": 0.3333
+                }
+              ]
+            }
+          },
+          "overrides": [
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "A( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "blue"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "B( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "orange"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "C( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "green"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": ".* p95"
+              },
+              "properties": [
+                {
+                  "id": "custom.lineStyle",
+                  "value": {
+                    "fill": "dash",
+                    "dash": [
+                      10,
+                      6
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "options": {
+          "legend": {
+            "displayMode": "table",
+            "placement": "bottom",
+            "calcs": [
+              "lastNotNull",
+              "mean",
+              "max"
+            ]
+          },
+          "tooltip": {
+            "mode": "multi",
+            "sort": "none"
+          }
+        }
+      },
+      {
+        "id": 12,
+        "type": "bargauge",
+        "title": "Share over selected time range",
+        "description": "Share of all requests in the dashboard's time range (increase over $__range). Set the time range to a run's window to read that run's A/B/C split.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "gridPos": {
+          "x": 16,
+          "y": 18,
+          "w": 4,
+          "h": 8
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            },
+            "expr": "(sum by (replica) (increase(weather_grpc_requests_total{job=\"weather-grpc\", rpc_method!=\"Check\"}[$__range]))\n  or sum by (replica) (up{job=\"weather-grpc\"}) * 0)\n/ ignoring(replica) group_left\nsum(increase(weather_grpc_requests_total{job=\"weather-grpc\", rpc_method!=\"Check\"}[$__range]))",
+            "legendFormat": "{{replica}}",
+            "instant": true,
+            "range": false
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "min": 0,
+            "color": {
+              "mode": "palette-classic"
+            },
+            "max": 1
+          },
+          "overrides": [
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "A( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "blue"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "B( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "orange"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "C( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "green"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": ".* p95"
+              },
+              "properties": [
+                {
+                  "id": "custom.lineStyle",
+                  "value": {
+                    "fill": "dash",
+                    "dash": [
+                      10,
+                      6
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "options": {
+          "orientation": "horizontal",
+          "displayMode": "basic",
+          "showUnfilled": true,
+          "valueMode": "color",
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ],
+            "fields": "",
+            "values": false
+          }
+        }
+      },
+      {
+        "id": 13,
+        "type": "bargauge",
+        "title": "Requests in selected time range",
+        "description": "Requests each replica handled in the dashboard's time range (Prometheus increase(); may be slightly fractional). Compare with Envoy's access log for the same range.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "gridPos": {
+          "x": 20,
+          "y": 18,
+          "w": 4,
+          "h": 8
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            },
+            "expr": "(sum by (replica) (increase(weather_grpc_requests_total{job=\"weather-grpc\", rpc_method!=\"Check\"}[$__range]))\n  or sum by (replica) (up{job=\"weather-grpc\"}) * 0)",
+            "legendFormat": "{{replica}}",
+            "instant": true,
+            "range": false
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "min": 0,
+            "color": {
+              "mode": "palette-classic"
+            }
+          },
+          "overrides": [
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "A( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "blue"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "B( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "orange"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "C( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "green"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": ".* p95"
+              },
+              "properties": [
+                {
+                  "id": "custom.lineStyle",
+                  "value": {
+                    "fill": "dash",
+                    "dash": [
+                      10,
+                      6
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "options": {
+          "orientation": "horizontal",
+          "displayMode": "basic",
+          "showUnfilled": true,
+          "valueMode": "color",
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ],
+            "fields": "",
+            "values": false
+          }
+        }
+      },
+      {
+        "id": 14,
+        "type": "timeseries",
+        "title": "Active requests per replica",
+        "description": "In-flight calls per replica (gauge, sampled every 5 s); health checks excluded.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "gridPos": {
+          "x": 0,
+          "y": 26,
+          "w": 8,
+          "h": 8
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            },
+            "expr": "sum by (replica) (weather_grpc_in_flight_calls{job=\"weather-grpc\", rpc_method!=\"Check\"})\n  or sum by (replica) (up{job=\"weather-grpc\"}) * 0",
+            "legendFormat": "{{replica}}",
+            "instant": false,
+            "range": true
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "custom": {
+              "lineWidth": 2,
+              "fillOpacity": 0,
+              "showPoints": "never",
+              "spanNulls": false,
+              "axisSoftMin": 0
+            },
+            "color": {
+              "mode": "palette-classic"
+            }
+          },
+          "overrides": [
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "A( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "blue"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "B( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "orange"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "C( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "green"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": ".* p95"
+              },
+              "properties": [
+                {
+                  "id": "custom.lineStyle",
+                  "value": {
+                    "fill": "dash",
+                    "dash": [
+                      10,
+                      6
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "options": {
+          "legend": {
+            "displayMode": "table",
+            "placement": "bottom",
+            "calcs": [
+              "lastNotNull",
+              "mean",
+              "max"
+            ]
+          },
+          "tooltip": {
+            "mode": "multi",
+            "sort": "none"
+          }
+        }
+      },
+      {
+        "id": 15,
+        "type": "timeseries",
+        "title": "p50 / p95 response time per replica (30 s window)",
+        "description": "Server-side latency estimated from histogram buckets (linear interpolation inside a bucket). Window: 30 s sliding (rate/quantile over [30s]), scrape every 5 s.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "gridPos": {
+          "x": 8,
+          "y": 26,
+          "w": 8,
+          "h": 8
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            },
+            "expr": "histogram_quantile(0.50, sum by (replica, le) (rate(weather_grpc_request_duration_seconds_bucket{job=\"weather-grpc\", rpc_method!=\"Check\"}[30s]))) > 0",
+            "legendFormat": "{{replica}} p50",
+            "instant": false,
+            "range": true
+          },
+          {
+            "refId": "B",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            },
+            "expr": "histogram_quantile(0.95, sum by (replica, le) (rate(weather_grpc_request_duration_seconds_bucket{job=\"weather-grpc\", rpc_method!=\"Check\"}[30s]))) > 0",
+            "legendFormat": "{{replica}} p95",
+            "instant": false,
+            "range": true
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "custom": {
+              "lineWidth": 2,
+              "fillOpacity": 0,
+              "showPoints": "never",
+              "spanNulls": false,
+              "axisSoftMin": 0
+            },
+            "color": {
+              "mode": "palette-classic"
+            }
+          },
+          "overrides": [
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "A( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "blue"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "B( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "orange"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "C( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "green"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": ".* p95"
+              },
+              "properties": [
+                {
+                  "id": "custom.lineStyle",
+                  "value": {
+                    "fill": "dash",
+                    "dash": [
+                      10,
+                      6
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "options": {
+          "legend": {
+            "displayMode": "table",
+            "placement": "bottom",
+            "calcs": [
+              "lastNotNull",
+              "mean",
+              "max"
+            ]
+          },
+          "tooltip": {
+            "mode": "multi",
+            "sort": "none"
+          }
+        }
+      },
+      {
+        "id": 16,
+        "type": "timeseries",
+        "title": "Errors by status per replica (30 s window)",
+        "description": "Non-success responses per second, by replica and grpc_code. Empty = no errors. Window: 30 s sliding (rate/quantile over [30s]), scrape every 5 s.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "gridPos": {
+          "x": 16,
+          "y": 26,
+          "w": 8,
+          "h": 8
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            },
+            "expr": "sum by (replica, grpc_code) (rate(weather_grpc_requests_total{job=\"weather-grpc\", rpc_method!=\"Check\", grpc_code!=\"OK\"}[30s])) > 0",
+            "legendFormat": "{{replica}} {{grpc_code}}",
+            "instant": false,
+            "range": true
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "reqps",
+            "custom": {
+              "lineWidth": 2,
+              "fillOpacity": 0,
+              "showPoints": "never",
+              "spanNulls": false,
+              "axisSoftMin": 0
+            },
+            "color": {
+              "mode": "palette-classic"
+            }
+          },
+          "overrides": [
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "A( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "blue"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "B( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "orange"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "C( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "green"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": ".* p95"
+              },
+              "properties": [
+                {
+                  "id": "custom.lineStyle",
+                  "value": {
+                    "fill": "dash",
+                    "dash": [
+                      10,
+                      6
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "options": {
+          "legend": {
+            "displayMode": "table",
+            "placement": "bottom",
+            "calcs": [
+              "lastNotNull",
+              "mean",
+              "max"
+            ]
+          },
+          "tooltip": {
+            "mode": "multi",
+            "sort": "none"
+          }
+        }
+      },
+      {
+        "id": 17,
+        "type": "row",
+        "title": "Envoy — the proxy's own view",
+        "collapsed": false,
+        "gridPos": {
+          "x": 0,
+          "y": 34,
+          "w": 24,
+          "h": 1
+        },
+        "panels": []
+      },
+      {
+        "id": 18,
+        "type": "timeseries",
+        "title": "Responses Envoy sent to clients, by class (30 s window)",
+        "description": "Includes errors Envoy generated itself (no healthy replica, connection failure) that never reach a replica's metrics.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "gridPos": {
+          "x": 0,
+          "y": 35,
+          "w": 8,
+          "h": 8
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            },
+            "expr": "sum by (envoy_http_conn_manager_prefix, envoy_response_code_class) (rate(envoy_http_downstream_rq_xx{envoy_http_conn_manager_prefix=~\"ingress_http|ingress_grpc\"}[30s])) > 0",
+            "legendFormat": "{{envoy_http_conn_manager_prefix}} {{envoy_response_code_class}}xx",
+            "instant": false,
+            "range": true
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "reqps",
+            "custom": {
+              "lineWidth": 2,
+              "fillOpacity": 0,
+              "showPoints": "never",
+              "spanNulls": false,
+              "axisSoftMin": 0
+            },
+            "color": {
+              "mode": "palette-classic"
+            }
+          },
+          "overrides": [
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "A( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "blue"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "B( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "orange"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "C( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "green"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": ".* p95"
+              },
+              "properties": [
+                {
+                  "id": "custom.lineStyle",
+                  "value": {
+                    "fill": "dash",
+                    "dash": [
+                      10,
+                      6
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "options": {
+          "legend": {
+            "displayMode": "table",
+            "placement": "bottom",
+            "calcs": [
+              "lastNotNull",
+              "mean",
+              "max"
+            ]
+          },
+          "tooltip": {
+            "mode": "multi",
+            "sort": "none"
+          }
+        }
+      },
+      {
+        "id": 19,
+        "type": "timeseries",
+        "title": "Active upstream requests per cluster",
+        "description": "Requests Envoy currently has outstanding to each cluster (all endpoints together).",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "gridPos": {
+          "x": 8,
+          "y": 35,
+          "w": 8,
+          "h": 8
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            },
+            "expr": "sum by (envoy_cluster_name) (envoy_cluster_upstream_rq_active{envoy_cluster_name=~\"weather_http|weather_grpc\"})",
+            "legendFormat": "{{envoy_cluster_name}}",
+            "instant": false,
+            "range": true
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "custom": {
+              "lineWidth": 2,
+              "fillOpacity": 0,
+              "showPoints": "never",
+              "spanNulls": false,
+              "axisSoftMin": 0
+            },
+            "color": {
+              "mode": "palette-classic"
+            }
+          },
+          "overrides": [
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "A( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "blue"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "B( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "orange"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "C( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "green"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": ".* p95"
+              },
+              "properties": [
+                {
+                  "id": "custom.lineStyle",
+                  "value": {
+                    "fill": "dash",
+                    "dash": [
+                      10,
+                      6
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "options": {
+          "legend": {
+            "displayMode": "table",
+            "placement": "bottom",
+            "calcs": [
+              "lastNotNull",
+              "mean",
+              "max"
+            ]
+          },
+          "tooltip": {
+            "mode": "multi",
+            "sort": "none"
+          }
+        }
+      },
+      {
+        "id": 20,
+        "type": "timeseries",
+        "title": "Endpoints per cluster: healthy vs total",
+        "description": "How many replicas each cluster lists and how many Envoy considers healthy (Part A: 1; Part C: 3; Part D: drops when B is stopped).",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "gridPos": {
+          "x": 16,
+          "y": 35,
+          "w": 8,
+          "h": 8
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            },
+            "expr": "sum by (envoy_cluster_name) (envoy_cluster_membership_healthy{envoy_cluster_name=~\"weather_http|weather_grpc\"})",
+            "legendFormat": "{{envoy_cluster_name}} healthy",
+            "instant": false,
+            "range": true
+          },
+          {
+            "refId": "B",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            },
+            "expr": "sum by (envoy_cluster_name) (envoy_cluster_membership_total{envoy_cluster_name=~\"weather_http|weather_grpc\"})",
+            "legendFormat": "{{envoy_cluster_name}} total",
+            "instant": false,
+            "range": true
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "custom": {
+              "lineWidth": 2,
+              "fillOpacity": 0,
+              "showPoints": "never",
+              "spanNulls": false,
+              "axisSoftMin": 0
+            },
+            "color": {
+              "mode": "palette-classic"
+            }
+          },
+          "overrides": [
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "A( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "blue"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "B( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "orange"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "C( .*)?"
+              },
+              "properties": [
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "green"
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": ".* p95"
+              },
+              "properties": [
+                {
+                  "id": "custom.lineStyle",
+                  "value": {
+                    "fill": "dash",
+                    "dash": [
+                      10,
+                      6
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "options": {
+          "legend": {
+            "displayMode": "table",
+            "placement": "bottom",
+            "calcs": [
+              "lastNotNull",
+              "mean",
+              "max"
+            ]
+          },
+          "tooltip": {
+            "mode": "multi",
+            "sort": "none"
+          }
+        }
+      }
+    ]
+  }

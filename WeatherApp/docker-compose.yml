@@ -1,7 +1,4 @@
-# =====================================================================
 # A3 — Weather App behind Envoy, three replicas (A, B, C)
-# =====================================================================
-
 # ---------------------------------------------------------------------
 # Shared definition for every app replica (YAML anchor).
 # app-a / app-b / app-c below reuse this and only change REPLICA_ID

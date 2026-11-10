@@ -3,10 +3,8 @@ import os
 import time
 import uuid
 from dataclasses import dataclass
-
 import redis
 from fastapi import HTTPException, Request, Response
-
 from logging_config import logger
 from redis_client import get_redis
 

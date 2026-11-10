@@ -156,13 +156,13 @@ static_resources:
         - endpoint:   # Replica A
             address:
               socket_address: { address: 172.28.0.11, port_value: 8000 }
-        # Part C: uncomment B and C
-        # - endpoint:   # Replica B
-        #     address:
-        #       socket_address: { address: 172.28.0.12, port_value: 8000 }
-        # - endpoint:   # Replica C
-        #     address:
-        #       socket_address: { address: 172.28.0.13, port_value: 8000 }
+        # Part C
+        - endpoint:   # Replica B
+            address:
+              socket_address: { address: 172.28.0.12, port_value: 8000 }
+        - endpoint:   # Replica C
+            address:
+              socket_address: { address: 172.28.0.13, port_value: 8000 }
 
   # -------------------------------------------------------------------
   # gRPC upstream cluster — must speak HTTP/2 to the replicas
@@ -190,10 +190,10 @@ static_resources:
         - endpoint:   # Replica A
             address:
               socket_address: { address: 172.28.0.11, port_value: 50051 }
-        # Part C: uncomment B and C
-        # - endpoint:   # Replica B
-        #     address:
-        #       socket_address: { address: 172.28.0.12, port_value: 50051 }
-        # - endpoint:   # Replica C
-        #     address:
-        #       socket_address: { address: 172.28.0.13, port_value: 50051 }
+        # Part C
+        - endpoint:   # Replica B
+            address:
+              socket_address: { address: 172.28.0.12, port_value: 50051 }
+        - endpoint:   # Replica C
+            address:
+              socket_address: { address: 172.28.0.13, port_value: 50051 }
