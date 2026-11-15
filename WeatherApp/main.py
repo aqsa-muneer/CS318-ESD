@@ -11,6 +11,8 @@ from weather import (get_coordinates, get_current_weather, get_forecast)
 import time
 import uuid # Part C
 import logging # Part C
+#assignment 3 part D
+import asyncio
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from fastapi.responses import Response
 
@@ -30,6 +32,8 @@ if os.getenv("WEATHER_FAKE_UPSTREAM") == "1":
 
 # Assignment 3: which replica this process is (A, B or C). Set per container in docker-compose.
 REPLICA_ID = os.getenv("REPLICA_ID", "local")
+FAULT_DELAY_MS = int(os.getenv("FAULT_DELAY_MS", "0")) # artificial delay added to every request. Only replica B sets it
+# 0 means normal behaviour
 
 app = FastAPI(
     title="Weather App API",
@@ -68,6 +72,8 @@ async def observability_middleware(request, call_next):
     # Start timing the complete HTTP request.
     start_time = time.perf_counter()
     try:
+        if FAULT_DELAY_MS and request.url.path != "/metrics": # B's latency and active request count rise slowly. /metrics is skipped so prometheus scrapes stay unaffected, /health is not skipped
+            await asyncio.sleep(FAULT_DELAY_MS / 1000) # pauses this request without blocking the server
         # Allow FastAPI to process the request.
         response = await call_next(request)
         # Calculate complete request duration.

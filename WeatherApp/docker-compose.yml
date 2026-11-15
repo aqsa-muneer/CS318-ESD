@@ -72,6 +72,7 @@ services:
     environment:
       <<: *app-env
       REPLICA_ID: "B"
+      FAULT_DELAY_MS: "${B_DELAY_MS:-0}" # delay is prompted via terminal
     networks:
       default:
         ipv4_address: 172.28.0.12

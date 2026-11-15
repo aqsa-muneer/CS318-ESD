@@ -1,118 +1,221 @@
-# CS318-ESD
-FastAPI weather service with an OpenAPI spec, idempotent writes, rate limiting, a resilient Python caller, and a gRPC along with Prometheus/Grafana metrics.
+# Weather App — A3: Load balancing with Envoy
+
+Three replicas (A, B, C) of the Weather App behind Envoy, for both HTTP (`GET /forecast`) and
+gRPC (`WeatherService/GetForecast`).
+
+## Contents
+
+| Path | What it is |
+| --- | --- |
+| `docker-compose.yml` | Redis, replicas `app-a` / `app-b` / `app-c` (one template, fixed IPs), Envoy, observability stack |
+| `Dockerfile` | One image per replica; runs the gRPC server and uvicorn in the same container |
+| `envoy/envoy.yaml` | HTTP listener `:10000` (host `:8080`), gRPC listener `:10001` (host `:50051`, HTTP/2), two clusters, health checks, JSON access log |
+| `prometheus/prometheus.yml` | Scrapes A, B, C (`:8000`, `:9101`) and Envoy (`:9901`) directly, adds a `replica` label |
+| `filebeat/filebeat.yml` | Ships replica logs (`app.*`) and Envoy's access log (`envoy.*`) to Elasticsearch |
+| `grafana/dashboards/a3-load-balancing.json` | Exported dashboard: per-replica rate, share, active requests, p50/p95, errors; Envoy view |
+| `loadgen.py` | Fixed-rate (open-loop) test client for HTTP and gRPC; no retries |
+| `failover.py` | Part D3 helper: stops and restarts B during a run and times Envoy's reaction |
+| `redis_client.py`, `subscriptions.py`, `idempotency.py`, `ratelimit.py` | Shared state in Redis (A2 code moved out of process memory) |
+| `logging_config.py`, `main.py`, `grpc_metrics.py`, `grpc_server.py` | A2 code with A3 changes marked `# A3`: replica ID, request-ID correlation, fault delay, gRPC health service |
+| `results/runs.jsonl`, `results/warmup.jsonl` | One JSON summary per measured run and per warm-up |
+
+Not in the repository: `venv/`, `logs/`, Docker volumes (`.gitignore`).
+
+## Prerequisites
+
+- Docker Desktop (Compose v2)
+- Python 3.12+ with a virtual environment for the test client:
+
+```
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+`requirements.txt` pins `grpcio==1.84.0`, `protobuf==7.36.2` and `grpcio-health-checking==1.84.0`
+to match the generated `weather_pb2*.py` files.
 
 ## Setup
--> **python -m venv .venv**
 
--> **source .venv/bin/activate**
+```
+docker compose up -d --build
+docker compose ps
+```
 
--> **pip install -r requirements.txt**
+All 11 services should be `Up` (allow 30–60 s for Elasticsearch and Kibana). Use `-d`: without it,
+Compose follows every container's logs and Ctrl+C stops the whole stack.
 
-## Run tests: 
--> **pytest -q**
+Check that Envoy loaded its config and all replicas are healthy:
 
-About 50 tests: API, OpenAPI contract, idempotency, rate limit, caller, gRPC and dashboard checks. The PromQL syntax test is skipped unless **'pip install promql-parser'**. Tests use 'fake_upstream.py', an offline stand-in for Open-Meteo.
+```
+docker compose logs envoy | tail -3
+curl -s http://localhost:9901/clusters | grep health_flags
+```
 
-## Run the app (real weather data + frontend)
+| Address | Service |
+| --- | --- |
+| `http://localhost:8080` | Envoy, HTTP |
+| `localhost:50051` | Envoy, gRPC |
+| `http://localhost:9901` | Envoy admin (`/clusters`, `/stats/prometheus`, `/config_dump`) |
+| `http://localhost:9090/targets` | Prometheus targets (8, all UP) |
+| `http://localhost:3000` | Grafana → *A3 — Load balancing per replica (HTTP + gRPC)* |
+| `http://localhost:5601` | Kibana → Discover, data view `filebeat-*` |
 
-Use one terminal per command:
+Quick checks:
 
-1. **uvicorn main:app --port 8000**
-2. **python grpc_server.py**
-3. **cd frontend % npm run dev**
+```
+curl -i "http://localhost:8080/forecast?city=Karachi"          # header x-replica-id
+curl -i -H "x-request-id: demo-1" "http://localhost:8080/forecast?city=Karachi"
+```
 
-This mode calls the real Open-Meteo API, so any real city works.
+Kibana search that returns the Envoy event and the replica event for one request:
 
-## Run the monitoring demo:
+```
+app.request_id : "demo-1" or envoy.request_id : "demo-1"
+```
 
-Stop the HTTP and gRPC servers from the section above first, because only one process can use port 8000.
+## Changing Envoy's configuration safely
 
-1. Make sure Docker Desktop is running, then start Prometheus, Grafana and node exporter: **docker compose up -d prometheus grafana node-exporter**
+Always validate before restarting; a broken file stops Envoy:
 
-2. Start both servers in fake mode, one terminal each:
+```
+docker run --rm -v "$PWD/envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro" -v "$PWD/logs/envoy:/var/log/envoy" \
+  envoyproxy/envoy:v1.31-latest --mode validate -c /etc/envoy/envoy.yaml && docker compose up -d envoy
+sleep 6
+curl -s http://localhost:9901/clusters | grep -E "health_flags|weight"
+```
 
--> **WEATHER_FAKE_UPSTREAM=1 uvicorn main:app --port 8000**
+If validation reports `illegal map value`, the file contains non-breaking spaces copied from a web
+page; replace them and re-check:
 
--> **WEATHER_FAKE_UPSTREAM=1 python grpc_server.py**
+```
+sed -i '' $'s/\xc2\xa0/ /g' envoy/envoy.yaml      # macOS; on Linux use: sed -i ...
+python -c "import yaml; yaml.safe_load(open('envoy/envoy.yaml')); print('YAML OK')"
+```
 
-3. In a third terminal, generate traffic:
+## Workload (every run)
 
--> **python -m scripts.load --rounds 40 --pause 2 --burst 80**
+50 requests/s for 90 s per interface, HTTP then gRPC, each preceded by a 15 s warm-up and a 30 s
+pause. Do not open `localhost:8080` in a browser during a run.
 
-It sends a repeatable mix of successes and failures to HTTP and gRPC, then a burst that triggers 429s. It takes about 3 minutes and ends with 'burst result (status: count): {200: 38, 429: 42}'.
-   
-4. Open http://localhost:3000, go to Dashboards, then **Weather API: HTTP vs gRPC**, and set the range to the last 15 minutes.
+```
+python loadgen.py --interface http --rate 50 --duration 15 --label warmup-<name>-http --out results/warmup.jsonl && sleep 30 && \
+python loadgen.py --interface http --rate 50 --duration 90 --label <name>-http && sleep 30 && \
+python loadgen.py --interface grpc --rate 50 --duration 15 --label warmup-<name>-grpc --out results/warmup.jsonl && sleep 30 && \
+python loadgen.py --interface grpc --rate 50 --duration 90 --label <name>-grpc
+```
 
-With 'WEATHER_FAKE_UPSTREAM=1' the weather values are hard-coded and only a few cities exist (Karachi, Lahore, London, Tokyo, New York, plus the magic names 'Atlantis' = not found, 'Failville' = upstream down, 'Slowville' = slow). Use fake mode only for load and tests.
+Each run prints its window, achieved rate, successes/failures by status, A/B/C split, and client
+p50/p95/p99, and appends the same to `results/runs.jsonl`.
 
-To stop: press ctrl+c in each server terminal, and run '**docker compose stop prometheus grafana node-exporter**'.
+Count one run's distribution in Envoy's access log:
 
-## Try the API features
+```
+for run in <name>-http <name>-grpc; do echo "== $run"; grep "\"request_id\":\"$run-" logs/envoy/access.log | grep -o '"upstream_host":"[^"]*"' | sort | uniq -c; done
+```
 
-### Rate limit (429 and Retry-After)
+In Grafana, set the time range to a run's `window` to read that run's share and request counts.
 
-Stop any server on port 8000, then start the HTTP server with a low limit so the 429 appears quickly:
+## Experiments
 
--> **RATE_LIMIT_REQUESTS=10 uvicorn main:app --port 8000**
+The repository's `envoy.yaml` is the final state: A, B and C, equal-weight `ROUND_ROBIN`, active
+health checks on both clusters.
 
-In a second terminal, send 12 requests. The first 10 return 200 and the last 2 return 429:
+### Part B — baseline (A only)
 
--> **for i in $(seq 1 12); do curl -s -o /dev/null -w "%{http_code} " "localhost:8000/weather?city=Karachi"; done; echo**
+In both clusters of `envoy/envoy.yaml`, comment out the B and C endpoints, validate and restart
+Envoy, then run the workload with `<name>` = `baseline`. Expected: A 100%, B and C 0%.
 
-Show the full 429 response. Look for the 'retry-after' header (seconds until you may call again) and the 'x-ratelimit-*' headers:
+### Part C — round robin
 
--> **curl -i "localhost:8000/weather?city=Karachi"**
+Restore the B and C endpoints (equal weights, `lb_policy: ROUND_ROBIN`), validate and restart, run
+with `<name>` = `rr`. Expected: about 33% each.
 
-The default limit is 60 requests per rolling 60 seconds per client IP. 'RATE_LIMIT_REQUESTS' and 'RATE_LIMIT_WINDOW_SECONDS' change it. The counter lives in memory, so restarting the server resets it.
+### Part D1 — weighted round robin 2:1:1
 
-### Idempotent write
-Send the same POST twice with the same key. The second response is a replay with the same id and an 'Idempotent-Replayed: true' header:
+Add `load_balancing_weight` to each endpoint in both clusters, aligned with `endpoint:`:
 
--> **curl -i -X POST localhost:8000/subscriptions -H "Idempotency-Key: demo-key-0001" -H "Content-Type: application/json" -d '{"city":"Karachi","alert_above_c":40}'**
+```yaml
+        - endpoint:   # Replica A
+            address:
+              socket_address: { address: 172.28.0.11, port_value: 8000 }
+          load_balancing_weight: 2
+```
 
--> **curl -i -X POST localhost:8000/subscriptions -H "Idempotency-Key: demo-key-0001" -H "Content-Type: application/json" -d '{"city":"Karachi","alert_above_c":40}'**
+(weight `1` for B and C; port `50051` in the gRPC cluster). Validate, restart, check
+`curl -s http://localhost:9901/clusters | grep "::weight::"`, run with `<name>` = `wrr`.
 
-Reusing the key with a different body returns 422:
+Restore:
 
--> **curl -i -X POST localhost:8000/subscriptions -H "Idempotency-Key: demo-key-0001" -H "Content-Type: application/json" -d '{"city":"Lahore","alert_above_c":30}'**
+```
+sed -i '' '/load_balancing_weight/d' envoy/envoy.yaml
+```
 
-### OpenAPI spec
+then validate and restart.
 
-Regenerate 'openapi.yaml' from the code, then print every route, its inputs and its declared responses:
+### Part D2 — slow B: round robin vs least request
 
--> **python -m scripts.export_openapi**
+Add a 200 ms delay to every HTTP request and gRPC call on B only, and confirm it:
 
--> **python -m scripts.inspect_spec**
+```
+B_DELAY_MS=200 docker compose up -d app-b
+for r in a b c; do docker compose exec app-$r python -c "
+import httpx, time
+c = httpx.Client(); c.get('http://localhost:8000/forecast?city=Karachi')
+t = time.perf_counter(); c.get('http://localhost:8000/forecast?city=Karachi')
+print('$r', round((time.perf_counter() - t) * 1000), 'ms')"; done
+```
 
-The interactive version is at http://localhost:8000/docs while the server is running. A test fails if 'openapi.yaml' is out of date.
+Run 1, round robin: run with `<name>` = `d2rr`. Then switch both clusters to least request and
+confirm the running config:
 
-### Resilient Python caller
+```
+sed -i '' 's/lb_policy: ROUND_ROBIN/lb_policy: LEAST_REQUEST/' envoy/envoy.yaml
+docker compose restart envoy && sleep 6
+curl -s http://localhost:9901/config_dump | grep -o '"lb_policy": "[A-Z_]*"'
+```
 
-Each demo starts its own server (ports 8765 and 8766) and prints its output:
+Run 2, least request: run with `<name>` = `d2lr`.
 
--> **python -m scripts.demo_caller**
+Restore:
 
--> **python -m scripts.demo_rate_limit**
+```
+sed -i '' 's/lb_policy: LEAST_REQUEST/lb_policy: ROUND_ROBIN/' envoy/envoy.yaml
+docker compose up -d app-b            # B recreated with no delay
+docker compose restart envoy
+```
 
-'demo_caller' shows a success, a retry, calls blocked while the circuit breaker is open, and recovery.
+### Part D3 — failure and recovery
 
-'demo_rate_limit' shows 5 accepted calls, a 429 with 'Retry-After', and being allowed again. To use the caller against a running server:
+Health checks (both clusters): interval 2 s, timeout 1 s, unhealthy threshold 2, healthy
+threshold 2; HTTP `GET /health`, gRPC `grpc.health.v1.Health/Check`. With round robin and no delay:
 
--> **python client.py --base-url http://localhost:8000**
+```
+python loadgen.py --interface http --rate 50 --duration 15 --label warmup-d3-http --out results/warmup.jsonl && sleep 30 && \
+python failover.py --interface http --label d3-http && sleep 30 && \
+python loadgen.py --interface grpc --rate 50 --duration 15 --label warmup-d3-grpc --out results/warmup.jsonl && sleep 30 && \
+python failover.py --interface grpc --label d3-grpc
+```
 
-### gRPC
-1. **python -m scripts.grpc_client Karachi**
+`failover.py` stops B at 25 s and starts it at 55 s, prints when Envoy removed and re-added B, and
+a 5-second table of A/B/C traffic and failures from Envoy's access log. Re-print the tables once the
+log is fully flushed:
 
-2. **python -m scripts.grpc_client Atlantis**
+```
+python -c "import failover; failover.timeline('http', 'd3-http'); failover.timeline('grpc', 'd3-grpc')"
+```
 
-3. **python -m scripts.grpc_client "" --method GetForecast**
+## Recovery commands
 
-The service contract is 'weather.proto'. After editing it, regenerate the Python code:
+| Situation | Command |
+| --- | --- |
+| A replica is stopped | `docker compose start app-b` (or `docker compose up -d app-b`) |
+| B still has the delay | `docker compose up -d app-b` |
+| Envoy stopped after a bad config | fix `envoy.yaml`, then the validate-and-restart command above |
+| Check health | `curl -s http://localhost:9901/clusters \| grep health_flags` |
+| Restart one service | `docker compose restart <service>` |
+| Follow one service's logs | `docker compose logs -f <service>` (Ctrl+C stops only the log view) |
+| Stop everything (keep data) | `docker compose down` |
+| Stop and delete data volumes | `docker compose down -v` |
 
--> **python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. weather.proto**
-
-This writes 'weather_pb2.py' (message classes) and 'weather_pb2_grpc.py' (server and client stubs). 
-
-With 'grpcurl' installed, no reflection is needed because '-proto' is given:
-
--> **grpcurl -plaintext -proto weather.proto -d '{"city":"Karachi"}' localhost:50051 weather.v1.WeatherService/GetCurrentWeather**
+Restarting Envoy resets its counters; avoid it during a measured run.
